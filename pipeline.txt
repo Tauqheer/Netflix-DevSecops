@@ -1,0 +1,74 @@
+pipeline {
+    agent any
+    tools {
+        jdk 'jdk17'
+        nodejs 'node16'
+    }
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+    stages {
+        stage('clean environment') {
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Checkout from git') {
+            steps {
+                git branch: 'main', url: 'https://github.com/N4si/DevSecOps-Project.git'
+            }
+        }
+        stage('Sonarcube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=Netflix \
+                    -Dsonar.projectKey=Netflix'''
+                }
+            }
+        }
+        stage("quality gate") {
+            steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsID: 'Sonar-token'
+                }
+            }
+        }
+        stage('Install Dependencies') {
+            steps {
+                sh "npm install"
+            }
+        }
+        stage('Docker build and push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker'){
+                        sh "docker build --build-arg TMDB_V3_API_KEY= -t netflix ."
+                        sh "docker tag netflix tauqheer/netflix:latest "
+                        sh "docker push tauqheer/netflix:latest "
+                    }
+                }
+            }
+        }
+        stage("TRIVY") {
+            steps {
+                sh "trivy image tauqheer/netflix:latest > trivyimage.txt"
+            }
+        }
+        stage('Deploy to container') {
+            steps{
+                sh "docker run -d -p 8081:80 tauqheer/netflix:latest"
+            }
+        }
+    }
+    post {
+        always {
+            emailext attachLog: true,
+                subject: "'${currentBuild.result}'",
+                body: "Project: ${env.JOB_NAME}<br/>" +
+                    "Build Number: ${env.BUILD_NUMBER}<br/>" +
+                    "URL: ${env.BUILD_URL}<br/>",
+                to: 'tauqheer.ahmed705@gmail.com',
+                attachmentsPattern: 'trivyfs.txt,trivyimage.txt'
+        }
+    }
+}

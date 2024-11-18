@@ -42,4 +42,3 @@ Below are some of the pictures from the project deployed.
 
 
 The above was inspired by CloudChamp Netflix Project.
-
